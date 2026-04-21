@@ -6,10 +6,10 @@
 ██║███████║██║  ██║███████║██║  ██╗    ███████║╚██████╔╝██║     ██║  ██║███████╗██║ ╚═╝ ██║███████╗
 ╚═╝╚══════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝    ╚══════╝ ╚═════╝ ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝╚══════╝
 ================================================================================
-SISTEMA: ISHAK SUPREME-MAIL V900 - THE APEX ENTERPRISE ARCHITECTURE
+SISTEMA: ISHAK SUPREME-MAIL V900.7 - THE APEX ENTERPRISE ARCHITECTURE
 CEO Y DIRECTOR SUPREMO: Ishak (@izi_1244) - Sede Central: España.
-DIRECTIVA DE SEGURIDAD [VEO3-ESPAÑOL]: BLINDADA EN EL REGISTRO KERNEL.
-MOTOR DE ESCANEO PROFUNDO: EXTRACCIÓN DE ENLACES, IMÁGENES Y ADJUNTOS ACTIVADO.
+DIRECTIVA VEO3 [ESPAÑOL]: ACTIVA.
+ESTADO: 100% REAL. CERO SIMULACIONES. MOTOR MAIL.GW INTEGRADO.
 ================================================================================
 """
 
@@ -26,7 +26,6 @@ import random
 import threading
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
-from functools import wraps
 
 def bootstrap():
     try:
@@ -35,7 +34,6 @@ def bootstrap():
         import flask
         from bs4 import BeautifulSoup
     except ImportError:
-        print("📦 [BOOTSTRAP V900] Inyectando librerías tácticas...")
         import subprocess
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "--quiet"])
 
@@ -43,7 +41,7 @@ bootstrap()
 
 import aiohttp
 from bs4 import BeautifulSoup
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, render_template_string
 from flask_cors import CORS
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
@@ -54,14 +52,15 @@ from telegram.ext import (
 )
 
 class SupremeConfig:
-    TOKEN = "8641633728:AAEJ6dJhmIQsjLkMsuDd3gLckdYMRMrjSPI"
+    TOKEN = "8641633728:AAFz8fMKKZivoZ_x_Ad6Zia_IDYrEEqy174"
     ADMIN_ID = 8398522835
     PORT = int(os.getenv("PORT", 8080))
-    VERSION = "900.6.0-SUPREME-STABLE"
+    VERSION = "900.7.0-REAL-MATRIX"
     
     VAULT_DIR = "empire_vault"
     DB_PATH = os.path.join(VAULT_DIR, "supreme_db.json")
 
+    # Eliminada la capacidad 'send_mail' por ser técnicamente imposible en APIs gratuitas.
     PLANS = {
         "FREE": {"name": "🆓 CIUDADANO", "max_emails": 1, "auto_notify": False, "attachments": False, "api": False, "custom_alias": False, "export_txt": False},
         "PRO": {"name": "💎 ÉLITE PRO", "max_emails": 5, "auto_notify": True, "attachments": True, "api": False, "custom_alias": False, "export_txt": True},
@@ -135,45 +134,50 @@ class QuantumDatabase:
 
 db = QuantumDatabase()
 
+# =================================================================
+# [3] REAL MAIL ENGINE (Mail.gw API - Bypass Render limits safely)
+# =================================================================
 class MailEngine:
-    BASE_URL = "https://www.1secmail.com/api/v1/"
+    BASE_URL = "https://api.mail.gw"
     HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
-        "Accept": "application/json"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json",
+        "Content-Type": "application/json"
     }
 
     @staticmethod
     def parse_email_html(html_content):
-        """DEEP-SCAN ENGINE: Extrae enlaces e imágenes del HTML"""
-        if not html_content: return "Sin contenido HTML.", [], []
+        if not html_content: return "Sin contenido.", [], []
         soup = BeautifulSoup(html_content, "html.parser")
-
         links = []
         for a in soup.find_all('a', href=True):
-            text = a.text.strip() or "Enlace Directo"
-            if len(links) < 8: # Limitar para no saturar Telegram
-                links.append(f"🔗 [{text}]({a['href']})")
-
+            if len(links) < 8: links.append(f"🔗 [{a.text.strip() or 'Enlace'}]({a['href']})")
         images = []
         for img in soup.find_all('img', src=True):
-            src = img['src']
-            if src.startswith('http') and len(images) < 5:
-                images.append(src)
-
+            if img['src'].startswith('http') and len(images) < 5: images.append(img['src'])
         text = soup.get_text(separator="\n", strip=True)
         return text, links, images
 
     @classmethod
-    async def get_domains(cls):
-        fallbacks = [{"domain": "1secmail.com"}, {"domain": "1secmail.org"}, {"domain": "1secmail.net"}, {"domain": "kzccv.com"}, {"domain": "vjuum.com"}]
+    async def req(cls, method, endpoint, token=None, json_data=None):
+        headers = cls.HEADERS.copy()
+        if token: headers["Authorization"] = f"Bearer {token}"
         try:
             async with aiohttp.ClientSession() as s:
-                async with s.get(f"{cls.BASE_URL}?action=getDomainList", headers=cls.HEADERS) as r:
-                    if r.status == 200:
-                        data = await r.json()
-                        if data: return [{"domain": d} for d in data]
-        except Exception: pass
-        return fallbacks
+                async with s.request(method, f"{cls.BASE_URL}{endpoint}", headers=headers, json=json_data) as r:
+                    if r.status in [200, 201]: return await r.json()
+                    elif r.status == 204: return True
+                    else:
+                        logger.error(f"Mail.gw API Error {r.status} en {endpoint}")
+                        return None
+        except Exception as e:
+            logger.error(f"MailEngine Request Exception: {e}")
+            return None
+
+    @classmethod
+    async def get_domains(cls):
+        res = await cls.req("GET", "/domains")
+        return res.get("hydra:member", []) if res else []
 
     @classmethod
     async def create_account(cls, domain, custom_username=None):
@@ -181,49 +185,37 @@ class MailEngine:
         address = f"{username}@{domain}"
         password = ''.join(random.choices(string.ascii_letters + string.digits, k=16)) + "X!"
         
-        return {
-            "address": address, "password": password, 
-            "token": f"{username}:{domain}", "domain": domain, 
-            "id": str(uuid.uuid4())[:8], "login": username
-        }
-
-    @classmethod
-    async def get_messages(cls, token):
-        try:
-            login, domain = token.split(":")
-            async with aiohttp.ClientSession() as s:
-                async with s.get(f"{cls.BASE_URL}?action=getMessages&login={login}&domain={domain}", headers=cls.HEADERS) as r:
-                    if r.status == 200:
-                        msgs = await r.json()
-                        return [{"id": str(m["id"]), "from": {"address": m["from"]}, "subject": m["subject"], "createdAt": m["date"]} for m in msgs]
-        except Exception: pass
-        return []
-
-    @classmethod
-    async def read_message(cls, token, msg_id):
-        try:
-            login, domain = token.split(":")
-            async with aiohttp.ClientSession() as s:
-                async with s.get(f"{cls.BASE_URL}?action=readMessage&login={login}&domain={domain}&id={msg_id}", headers=cls.HEADERS) as r:
-                    if r.status == 200:
-                        m = await r.json()
-                        atts = [{"filename": a["filename"]} for a in m.get("attachments", [])]
-                        return {
-                            "id": str(m["id"]), "from": {"address": m["from"]},
-                            "subject": m["subject"], "createdAt": m["date"],
-                            "text": m.get("textBody", ""), "html": m.get("htmlBody", ""),
-                            "hasAttachments": len(atts) > 0, "attachments": atts
-                        }
-        except Exception: pass
+        acc_data = await cls.req("POST", "/accounts", json_data={"address": address, "password": password})
+        if acc_data:
+            token_data = await cls.req("POST", "/token", json_data={"address": address, "password": password})
+            if token_data:
+                return {
+                    "address": address, "password": password, 
+                    "token": token_data["token"], "domain": domain, 
+                    "id": acc_data["id"]
+                }
         return None
 
     @classmethod
-    async def download_attachment(cls, token, msg_id, filename):
+    async def get_messages(cls, token):
+        res = await cls.req("GET", "/messages", token=token)
+        return res.get("hydra:member", []) if res else []
+
+    @classmethod
+    async def read_message(cls, token, msg_id):
+        return await cls.req("GET", f"/messages/{msg_id}", token=token)
+
+    @classmethod
+    async def delete_account(cls, token, account_id):
+        return await cls.req("DELETE", f"/accounts/{account_id}", token=token)
+
+    @classmethod
+    async def download_attachment(cls, token, msg_id, attachment_id, filename):
+        headers = cls.HEADERS.copy()
+        headers["Authorization"] = f"Bearer {token}"
         try:
-            login, domain = token.split(":")
             async with aiohttp.ClientSession() as s:
-                url = f"{cls.BASE_URL}?action=download&login={login}&domain={domain}&id={msg_id}&file={filename}"
-                async with s.get(url, headers=cls.HEADERS) as r:
+                async with s.get(f"{cls.BASE_URL}/messages/{msg_id}/download/{attachment_id}", headers=headers) as r:
                     if r.status == 200:
                         path = os.path.join(SupremeConfig.VAULT_DIR, f"att_{uuid.uuid4().hex[:8]}_{filename}")
                         with open(path, 'wb') as f: f.write(await r.read())
@@ -242,6 +234,7 @@ async def cron_job(context: ContextTypes.DEFAULT_TYPE):
             if u.get("emails"):
                 for acc in list(u["emails"]):
                     if acc.get("timer") and now > parse(acc["timer"]):
+                        await MailEngine.delete_account(acc["token"], acc["id"])
                         u["emails"].remove(acc)
                         try: await bot.send_message(chat_id=uid, text=f"🧨 **AUTO-DESTRUCCIÓN EJECUTADA**\nLa bóveda `{acc['address']}` ha sido purgada.", parse_mode="Markdown")
                         except Exception: pass
@@ -258,9 +251,7 @@ async def cron_job(context: ContextTypes.DEFAULT_TYPE):
                                 full_m = await MailEngine.read_message(acc["token"], m["id"])
                                 if not full_m: continue
                                 
-                                text = MailEngine.parse_email_html(full_m.get("html", ""))[0]
-                                if full_m.get("text"): text = full_m["text"]
-                                
+                                text = full_m.get("intro", "")
                                 alert = (f"🔔 **NUEVO PAQUETE INTERCEPTADO**\n"
                                          f"─────────────────\n"
                                          f"📥 **Bóveda:** `{acc['address']}`\n"
@@ -284,7 +275,7 @@ class SupremeUI:
     def home(u):
         plan = SupremeConfig.PLANS[u["plan"]]
         exp = f"\n⏳ Caducidad: `{u['plan_expiry'][:10]}`" if u.get("plan_expiry") else ""
-        msg = (f"🌐 **ISHAK SUPREME-MAIL V900**\n"
+        msg = (f"🌐 **ISHAK SUPREME-MAIL V900.7**\n"
                f"El pináculo de la arquitectura corporativa SaaS.\n"
                f"──────────────────────\n"
                f"👤 **Ejecutivo:** `{u['name']}`\n"
@@ -308,7 +299,7 @@ class SupremeUI:
 
     @staticmethod
     def create_menu(u):
-        msg = ("➕ **FORJA DE BÓVEDA**\nSeleccione el método de síntesis de credenciales:")
+        msg = ("➕ **FORJA DE BÓVEDA REAL**\nSeleccione el método de síntesis de credenciales:")
         kb = [[InlineKeyboardButton("🎲 Aleatorio Rápido", callback_data="create_random")]]
         if SupremeConfig.PLANS[u["plan"]]["custom_alias"]:
             kb.append([InlineKeyboardButton("📝 Alias Personalizado (TITAN)", callback_data="create_custom")])
@@ -320,7 +311,7 @@ class SupremeUI:
     @staticmethod
     def inbox_actions(idx):
         return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Sincronizar", callback_data=f"inbox_{idx}"), InlineKeyboardButton("⏱️ Auto-Destrucción", callback_data=f"timer_{idx}")],
+            [InlineKeyboardButton("🔄 Sincronizar Bandeja", callback_data=f"inbox_{idx}"), InlineKeyboardButton("⏱️ Auto-Destrucción", callback_data=f"timer_{idx}")],
             [InlineKeyboardButton("📄 Exportar TXT (VIP)", callback_data=f"export_{idx}"), InlineKeyboardButton("🗑️ Purgar", callback_data=f"del_{idx}")],
             [InlineKeyboardButton("⬅️ Centro de Comunicaciones", callback_data="app_inboxes")]
         ])
@@ -328,7 +319,7 @@ class SupremeUI:
     @staticmethod
     def admin_panel():
         s = db.data["stats"]
-        msg = ("👁️ **TERMINAL SUPREMA (DIRECTOR ISHAK)**\nControl absoluto de la infraestructura V900.\n──────────────────────\n"
+        msg = ("👁️ **TERMINAL SUPREMA (DIRECTOR ISHAK)**\nControl absoluto de la infraestructura.\n──────────────────────\n"
                f"👥 Ciudadanos: `{len(db.data['users'])}`\n📧 Bóvedas: `{s['emails_gen']}`\n"
                f"⭐️ Ingresos XTR: `{s['stars_rev']}`\n──────────────────────")
         kb = [[InlineKeyboardButton("👁️ Espionaje", callback_data="adm_users_0"), InlineKeyboardButton("🎫 Acuñar Cupón", callback_data="adm_new_cp")],
@@ -338,11 +329,8 @@ class SupremeUI:
 # =================================================================
 # [6] ROUTER V900
 # =================================================================
-async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🏓 **PONG!** La Matriz V900 está escuchando tus órdenes.")
-
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"📥 [RADAR V900] ¡COMANDO /START RECIBIDO DEL USUARIO {update.effective_user.id}!")
+    logger.info(f"📥 [RADAR V900] ¡COMANDO /START RECIBIDO!")
     u = await db.get_user(update.effective_user)
     safe_name = str(u.get('name', 'Ejecutivo')).replace('_', '').replace('*', '').replace('`', '')
     u['name'] = safe_name
@@ -386,21 +374,25 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif data.startswith("create_"):
             if len(u["emails"]) >= plan_cfg["max_emails"]: return await q.answer("Límite estructural alcanzado.", show_alert=True)
             action = data.split("_")[1]
+            
+            await q.edit_message_text("⏳ Pidiendo datos a la red Mail.gw...")
             domains = await MailEngine.get_domains()
+            if not domains: return await q.edit_message_text("❌ Servidores de la API caídos.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Retorno", callback_data="app_create_menu")]]))
 
             if action == "random":
-                await q.edit_message_text("⏳ Sintetizando...")
+                await q.edit_message_text("⏳ Creando cuenta real en el servidor...")
                 d = domains[random.randint(0, len(domains)-1)] if plan_cfg["custom_alias"] else domains[0]
                 acc = await MailEngine.create_account(d["domain"])
                 if acc:
                     u["emails"].append(acc); db.data["stats"]["emails_gen"] += 1; await db.save()
-                    msg = f"✅ **BÓVEDA LISTA**\n📧 `{acc['address']}`\n🔑 `{acc['password']}`"
+                    msg = f"✅ **BÓVEDA LISTA Y REAL**\n📧 `{acc['address']}`\n🔑 `{acc['password']}`"
                     await q.edit_message_text(msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📬 Entrar", callback_data=f"inbox_{len(u['emails'])-1}")], [InlineKeyboardButton("⬅️ Menú", callback_data="app_home")]]))
+                else: await q.edit_message_text("❌ La API denegó la creación.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Retorno", callback_data="app_create_menu")]]))
             elif action == "custom":
-                await q.edit_message_text("📝 Escribe el nombre de usuario deseado en el chat (ej: ishak.empresa):")
+                await q.edit_message_text("📝 Escribe el nombre de usuario deseado en el chat (ej: director.ishak):")
                 context.user_data["state"] = "WAIT_CUSTOM_ALIAS"; context.user_data["domains"] = domains
             elif action == "domain":
-                kb = [[InlineKeyboardButton(f"🌐 {d['domain']}", callback_data=f"seldom_{d['domain']}")] for d in domains[:8]]
+                kb = [[InlineKeyboardButton(f"🌐 {d['domain']}", callback_data=f"seldom_{d['domain']}")] for d in domains[:10]]
                 kb.append([InlineKeyboardButton("⬅️ Retorno", callback_data="app_create_menu")])
                 await q.edit_message_text("🌐 Selecciona un dominio premium:", reply_markup=InlineKeyboardMarkup(kb))
         
@@ -415,7 +407,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif data.startswith("inbox_"):
             idx = int(data.split("_")[1])
             acc = u["emails"][idx]
-            await q.edit_message_text(f"🔄 Escaneando `{acc['address']}`...", parse_mode="Markdown")
+            await q.edit_message_text(f"🔄 Consultando a la red Mail.gw por `{acc['address']}`...", parse_mode="Markdown")
             msgs = await MailEngine.get_messages(acc["token"])
             kb = []
             if msgs:
@@ -427,7 +419,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not msgs:
                 msg_text += "\n📭 _La bandeja está vacía. Envía un correo a esta dirección para probar._\n"
             else:
-                msg_text += f"\nPaquetes interceptados: {len(msgs)}\n"
+                msg_text += f"\nPaquetes interceptados reales: {len(msgs)}\n"
             
             msg_text += f"\n🔄 Última actualización: `{datetime.datetime.now().strftime('%H:%M:%S')}`"
             await q.edit_message_text(msg_text, reply_markup=SupremeUI.inbox_actions(idx), parse_mode="Markdown")
@@ -437,15 +429,16 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.edit_message_text("⏳ Desencriptando Deep-Scan...")
             
             full_m = await MailEngine.read_message(acc["token"], msg_id)
+            if not full_m: return await q.answer("❌ Error al leer el mensaje.", show_alert=True)
+            
             if "id" not in u.get("read_msg_ids", []): u.setdefault("read_msg_ids", []).append(full_m["id"]); await db.save()
             
-            # DEEP SCAN HTML PARSING
             text_body = full_m.get("text", "").strip()
-            html_body = full_m.get("html", "").strip()
+            html_body = full_m.get("html", [])[0] if isinstance(full_m.get("html"), list) else full_m.get("html", "")
             parsed_text, links, images = MailEngine.parse_email_html(html_body)
             
             final_body = text_body if text_body else parsed_text
-            body_safe = final_body[:3000].replace("`", "'") # Evita que rompa el markdown
+            body_safe = final_body[:3000].replace("`", "'") 
             
             msg_text = (f"📨 **DATA INTERCEPTADA**\n"
                         f"─────────────────\n"
@@ -454,46 +447,43 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"─────────────────\n\n"
                         f"📄 **Cuerpo del Mensaje:**\n{body_safe}") 
             
-            if links: msg_text += "\n\n🔗 **ENLACES (Primeros 8):**\n" + "\n".join(links)
-            if images: msg_text += "\n\n🖼 **IMÁGENES (Previsualización):**\n" + "\n".join([f"• [Abrir Imagen]({img})" for img in images])
+            if links: msg_text += "\n\n🔗 **ENLACES:**\n" + "\n".join(links)
+            if images: msg_text += "\n\n🖼 **IMÁGENES:**\n" + "\n".join([f"• [Abrir Imagen]({img})" for img in images])
 
             kb = []
             if full_m.get("hasAttachments") and plan_cfg["attachments"]:
-                kb.append([InlineKeyboardButton(f"📎 Bajar Todos los Adjuntos ({len(full_m['attachments'])})", callback_data=f"dlall_{idx}_{msg_id}")])
+                kb.append([InlineKeyboardButton(f"📎 Bajar Adjuntos ({len(full_m['attachments'])})", callback_data=f"dlall_{idx}_{msg_id}")])
             
             kb.append([InlineKeyboardButton("⬅️ Bandeja", callback_data=f"inbox_{idx}")])
             await q.edit_message_text(msg_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
             
         elif data.startswith("dlall_"):
             parts = data.split("_"); idx = int(parts[1]); msg_id = parts[2]; acc = u["emails"][idx]
-            await q.answer("⏳ Extrayendo adjuntos de la matriz...", show_alert=False)
-            
+            await q.answer("⏳ Extrayendo adjuntos de la red...", show_alert=False)
             full_m = await MailEngine.read_message(acc["token"], msg_id)
             if not full_m or not full_m.get("attachments"):
-                return await q.answer("❌ Correo expirado o sin adjuntos.", show_alert=True)
-                
+                return await q.answer("❌ Sin adjuntos.", show_alert=True)
             for att in full_m["attachments"]:
-                path = await MailEngine.download_attachment(acc["token"], msg_id, att["filename"])
+                path = await MailEngine.download_attachment(acc["token"], msg_id, att["id"], att["name"])
                 if path:
-                    with open(path, 'rb') as doc: await context.bot.send_document(q.message.chat_id, doc, caption=f"📎 `{att['filename']}`\nExtraído por V900", parse_mode="Markdown")
+                    with open(path, 'rb') as doc: await context.bot.send_document(q.message.chat_id, doc, caption=f"📎 `{att['name']}`", parse_mode="Markdown")
                     os.remove(path)
 
         elif data.startswith("del_"):
             idx = int(data.split("_")[1])
             acc = u["emails"].pop(idx)
             await MailEngine.delete_account(acc["token"], acc["id"]); await db.save()
-            await q.answer("🗑️ Bóveda aniquilada.", show_alert=True)
+            await q.answer("🗑️ Bóveda aniquilada en la red real.", show_alert=True)
             msg, kb = SupremeUI.inboxes(u); await q.edit_message_text(msg, reply_markup=kb, parse_mode="Markdown")
             
         elif data.startswith("export_"):
             if not plan_cfg["export_txt"]: return await q.answer("Exclusivo VIP.", show_alert=True)
-            idx = int(data.split("_")[1])
-            acc = u["emails"][idx]
+            idx = int(data.split("_")[1]); acc = u["emails"][idx]
             await q.answer("⏳ Exportando bóveda a TXT...", show_alert=False)
             msgs = await MailEngine.get_messages(acc["token"])
             if not msgs: return await q.answer("Bandeja vacía.", show_alert=True)
             
-            content = f"--- EXPORTACIÓN B2B: {acc['address']} ---\n\n"
+            content = f"--- EXPORTACIÓN B2B REAL: {acc['address']} ---\n\n"
             for m in msgs:
                 full_m = await MailEngine.read_message(acc["token"], m["id"])
                 if full_m:
@@ -504,8 +494,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             path = os.path.join(SupremeConfig.VAULT_DIR, f"exp_{uuid.uuid4().hex[:8]}.txt")
             with open(path, "w", encoding="utf-8") as f: f.write(content)
             with open(path, "rb") as doc: await context.bot.send_document(q.message.chat_id, doc, caption=f"📄 **Respaldo Corporativo:** `{acc['address']}`", parse_mode="Markdown")
-            os.remove(path)
-            db.data["stats"]["exports"] = db.data["stats"].get("exports", 0) + 1; await db.save()
+            os.remove(path); db.data["stats"]["exports"] += 1; await db.save()
 
         elif data.startswith("timer_"):
             idx = int(data.split("_")[1])
@@ -545,7 +534,6 @@ async def text_machine(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         if not cp or uid in cp["used_by"] or len(cp["used_by"]) >= cp["uses"] or datetime.datetime.now() > parse(cp["expires"]):
             return await update.message.reply_text("❌ Cupón inválido o agotado.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Retorno", callback_data="app_home")]]))
-        
         cp["used_by"].append(uid); u["plan"] = cp["plan"]
         u["plan_expiry"] = (datetime.datetime.now() + relativedelta(days=cp["days"])).isoformat()
         await db.save()
@@ -555,13 +543,13 @@ async def text_machine(update: Update, context: ContextTypes.DEFAULT_TYPE):
         alias = "".join(c for c in text if c.isalnum() or c in ".-_").lower()
         if not alias: return await update.message.reply_text("❌ Formato inválido.")
         domains = context.user_data.get("domains", [])
-        m = await update.message.reply_text("⏳ Sintetizando...")
+        m = await update.message.reply_text("⏳ Sintetizando cuenta real...")
         acc = await MailEngine.create_account(domains[0]["domain"], custom_username=alias)
         context.user_data.clear()
         if acc:
             u["emails"].append(acc); db.data["stats"]["emails_gen"] += 1; await db.save()
             await m.edit_text(f"✅ **ALIAS CREADO**\n📧 `{acc['address']}`", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📬 Entrar", callback_data=f"inbox_{len(u['emails'])-1}")]]))
-        else: await m.edit_text("❌ El alias ya existe o hay falla en la red.")
+        else: await m.edit_text("❌ El alias ya existe o hay falla en la red de la API.")
 
     elif state == "CP_CODE" and is_admin:
         context.user_data["cp_code"] = text.upper(); await update.message.reply_text("🎖️ Plan (PRO, TITAN):"); context.user_data["state"] = "CP_PLAN"
@@ -599,7 +587,7 @@ CORS(web_app)
 def dashboard():
     return f"""
     <body style="background:#000;color:#0f0;font-family:monospace;text-align:center;padding:50px;">
-        <h1>ISHAK SUPREME-MAIL V900</h1>
+        <h1>ISHAK SUPREME-MAIL V900.7</h1>
         <p>CEO: Ishak (@izi_1244)</p>
         <p>KERNEL STATUS: ONLINE [VEO3-ES ACTIVE]</p>
         <p>USERS: {len(db.data['users'])} | VAULTS: {db.data['stats']['emails_gen']}</p>
@@ -619,7 +607,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 def main():
     print("=" * 80)
-    print(f"🚀 [V900 SUPREME] INICIANDO NÚCLEO...")
+    print(f"🚀 [V900.7 SUPREME] INICIANDO NÚCLEO...")
     print(f"🔒 CREDENCIALES CARGADAS. DIRECTOR: ISHAK (ID: {SupremeConfig.ADMIN_ID})")
     print("=" * 80)
     
@@ -629,12 +617,10 @@ def main():
     app.job_queue.run_repeating(cron_job, interval=30, first=5)
     
     app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("ping", ping_cmd))
     app.add_handler(CallbackQueryHandler(callback_router))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_machine))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
-    
     app.add_error_handler(error_handler)
     
     logger.info("🔄 Matriz Operativa.")
