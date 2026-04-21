@@ -163,7 +163,7 @@ class MailEngine:
                     if r.status == 200:
                         data = await r.json()
                         if data:
-                            # Filtramos "1secmail" para que Gmail no bloquee los correos salientes
+                            # Filtramos "1secmail" para que Gmail no bloquee los correos que le enviamos
                             safe_domains = [d for d in data if "1secmail" not in d]
                             if safe_domains:
                                 return [{"domain": d} for d in safe_domains]
@@ -181,7 +181,7 @@ class MailEngine:
         return {
             "address": address, "password": password, 
             "token": f"{username}:{domain}", "domain": domain, 
-            "id": str(uuid.uuid4())[:8]
+            "id": str(uuid.uuid4())[:8], "login": username
         }
 
     @classmethod
@@ -205,13 +205,13 @@ class MailEngine:
                 async with s.get(f"{cls.BASE_URL}?action=readMessage&login={login}&domain={domain}&id={msg_id}") as r:
                     if r.status == 200:
                         m = await r.json()
-                        # Adaptado para que la Matriz V900 lo lea perfectamente (incluidos adjuntos)
-                        atts = [{"id": a["filename"], "name": a["filename"], "filename": a["filename"]} for a in m.get("attachments", [])]
+                        atts = [{"id": a["filename"], "filename": a["filename"]} for a in m.get("attachments", [])]
                         return {
                             "id": str(m["id"]), "from": {"address": m["from"]},
                             "subject": m["subject"], "createdAt": m["date"],
                             "text": m.get("textBody", ""), "html": m.get("htmlBody", ""),
-                            "hasAttachments": len(atts) > 0, "attachments": atts
+                            "hasAttachments": len(atts) > 0, "attachments": atts,
+                            "intro": m.get("textBody", "")[:100]
                         }
         except Exception as e:
             logger.error(f"Read Message Error: {e}")
