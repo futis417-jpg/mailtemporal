@@ -52,7 +52,7 @@ from telegram.ext import (
 )
 
 class SupremeConfig:
-    TOKEN = "8641633728:AAFz8fMKKZivoZ_x_Ad6Zia_IDYrEEqy174"
+    TOKEN = "8641633728:AAHgoeh4cEWS8o7_46l1b4-6xj3GCGvev_s"
     ADMIN_ID = 8398522835
     PORT = int(os.getenv("PORT", 8080))
     VERSION = "900.7.0-REAL-MATRIX"
