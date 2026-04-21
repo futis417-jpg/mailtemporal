@@ -700,7 +700,8 @@ def main():
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     
     logger.info("🔄 Matriz Operativa.")
-    app.run_polling()
+    # Inyectamos el rompemuros para forzar la sincronización con Telegram
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
     main()
