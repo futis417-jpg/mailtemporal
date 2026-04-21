@@ -53,7 +53,7 @@ from telegram.ext import (
 )
 
 class SupremeConfig:
-    TOKEN = "8641633728:AAEarlDbrTc1jA1FebRqC8NIZtuMlTdi1as"
+    TOKEN = "8641633728:AAFz8fMKKZivoZ_x_Ad6Zia_IDYrEEqy174"
     ADMIN_ID = 8398522835
     PORT = int(os.getenv("PORT", 8080))
     VERSION = "900.0.2-SUPREME-STABLE"
@@ -135,7 +135,7 @@ class QuantumDatabase:
 db = QuantumDatabase()
 
 class MailEngine:
-    BASE_URL = "https://api.mail.tm"
+    BASE_URL = "https://www.1secmail.com/api/v1/"
 
     @staticmethod
     def clean_html(html_content):
@@ -143,20 +143,14 @@ class MailEngine:
         return BeautifulSoup(html_content, "html.parser").get_text(separator="\n", strip=True)
 
     @classmethod
-    async def req(cls, method, endpoint, token=None, json_data=None):
-        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"} if token else {"Accept": "application/json"}
+    async def get_domains(cls):
         try:
             async with aiohttp.ClientSession() as s:
-                async with s.request(method, f"{cls.BASE_URL}{endpoint}", headers=headers, json=json_data) as r:
-                    if r.status in [200, 201]: return await r.json()
-                    elif r.status == 204: return True
-                    return None
-        except Exception: return None
-
-    @classmethod
-    async def get_domains(cls):
-        res = await cls.req("GET", "/domains")
-        return res.get("hydra:member", []) if res else []
+                async with s.get(f"{cls.BASE_URL}?action=getDomainList") as r:
+                    if r.status == 200:
+                        return [{"domain": d} for d in await r.json()]
+        except Exception as e: logger.error(f"Domains Error: {e}")
+        return [{"domain": "1secmail.com"}, {"domain": "1secmail.org"}, {"domain": "1secmail.net"}]
 
     @classmethod
     async def create_account(cls, domain, custom_username=None):
@@ -164,30 +158,53 @@ class MailEngine:
         address = f"{username}@{domain}"
         password = ''.join(random.choices(string.ascii_letters + string.digits, k=16)) + "X!"
         
-        if await cls.req("POST", "/accounts", json_data={"address": address, "password": password}):
-            token_data = await cls.req("POST", "/token", json_data={"address": address, "password": password})
-            if token_data: return {"address": address, "password": password, "token": token_data["token"], "domain": domain, "id": token_data["id"]}
-        return None
+        return {
+            "address": address, "password": password, 
+            "token": f"{username}:{domain}", "domain": domain, 
+            "id": str(uuid.uuid4())[:8], "login": username
+        }
 
     @classmethod
     async def get_messages(cls, token):
-        res = await cls.req("GET", "/messages", token=token)
-        return res.get("hydra:member", []) if res else []
+        try:
+            login, domain = token.split(":")
+            async with aiohttp.ClientSession() as s:
+                async with s.get(f"{cls.BASE_URL}?action=getMessages&login={login}&domain={domain}") as r:
+                    if r.status == 200:
+                        msgs = await r.json()
+                        return [{"id": str(m["id"]), "from": {"address": m["from"]}, "subject": m["subject"], "createdAt": m["date"]} for m in msgs]
+        except Exception: pass
+        return []
 
     @classmethod
     async def read_message(cls, token, msg_id):
-        return await cls.req("GET", f"/messages/{msg_id}", token=token)
+        try:
+            login, domain = token.split(":")
+            async with aiohttp.ClientSession() as s:
+                async with s.get(f"{cls.BASE_URL}?action=readMessage&login={login}&domain={domain}&id={msg_id}") as r:
+                    if r.status == 200:
+                        m = await r.json()
+                        atts = [{"id": str(msg_id), "filename": a["filename"]} for a in m.get("attachments", [])]
+                        return {
+                            "id": str(m["id"]), "from": {"address": m["from"]},
+                            "subject": m["subject"], "createdAt": m["date"],
+                            "text": m.get("textBody", ""), "html": m.get("htmlBody", ""),
+                            "hasAttachments": len(atts) > 0, "attachments": atts
+                        }
+        except Exception: pass
+        return None
 
     @classmethod
     async def delete_account(cls, token, account_id):
-        return await cls.req("DELETE", f"/accounts/{account_id}", token=token)
+        return True # 1secmail manages auto-deletion
 
     @classmethod
     async def download_attachment(cls, token, msg_id, attachment_id, filename):
-        headers = {"Authorization": f"Bearer {token}"}
         try:
+            login, domain = token.split(":")
             async with aiohttp.ClientSession() as s:
-                async with s.get(f"{cls.BASE_URL}/messages/{msg_id}/download/{attachment_id}", headers=headers) as r:
+                url = f"{cls.BASE_URL}?action=download&login={login}&domain={domain}&id={msg_id}&file={filename}"
+                async with s.get(url) as r:
                     if r.status == 200:
                         path = os.path.join(SupremeConfig.VAULT_DIR, f"att_{uuid.uuid4().hex[:8]}_{filename}")
                         with open(path, 'wb') as f: f.write(await r.read())
@@ -196,7 +213,7 @@ class MailEngine:
         return None
 
 # =================================================================
-# [4] CRON & PUSH ENGINE (NATIVO DE PTB)
+# [4] CRON & PUSH ENGINE
 # =================================================================
 async def cron_job(context: ContextTypes.DEFAULT_TYPE):
     bot = context.bot
@@ -363,7 +380,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await q.edit_message_text("📝 Escribe el nombre de usuario deseado en el chat (ej: director.ishak):")
                 context.user_data["state"] = "WAIT_CUSTOM_ALIAS"; context.user_data["domains"] = domains
             elif action == "domain":
-                kb = [[InlineKeyboardButton(f"🌐 {d['domain']}", callback_data=f"seldom_{d['domain']}")] for d in domains[:5]]
+                kb = [[InlineKeyboardButton(f"🌐 {d['domain']}", callback_data=f"seldom_{d['domain']}")] for d in domains[:10]]
                 kb.append([InlineKeyboardButton("⬅️ Retorno", callback_data="app_create_menu")])
                 await q.edit_message_text("🌐 Selecciona un dominio premium:", reply_markup=InlineKeyboardMarkup(kb))
         elif data.startswith("seldom_"):
@@ -519,7 +536,7 @@ def dashboard():
     return f"""
     <body style="background:#000;color:#0f0;font-family:monospace;text-align:center;padding:50px;">
         <h1>ISHAK SUPREME-MAIL V900</h1>
-        <p>CEO: Ishak Ezzahouani (18)</p>
+        <p>CEO: Ishak (@izi_1244)</p>
         <p>KERNEL STATUS: ONLINE [VEO3-ES ACTIVE]</p>
         <p>USERS: {len(db.data['users'])} | VAULTS: {db.data['stats']['emails_gen']}</p>
         <p>REVENUE: {db.data['stats']['stars_rev']} STARS</p>
@@ -545,7 +562,6 @@ def main():
     threading.Thread(target=run_web, daemon=True).start()
     app = ApplicationBuilder().token(SupremeConfig.TOKEN).build()
     
-    # Motor Cron nativo y seguro de PTB (Ejecuta cada 30 segundos)
     app.job_queue.run_repeating(cron_job, interval=30, first=5)
     
     app.add_handler(CommandHandler("start", start_cmd))
