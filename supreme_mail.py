@@ -52,7 +52,7 @@ from telegram.ext import (
 )
 
 class SupremeConfig:
-    TOKEN = "8641633728:AAHgoeh4cEWS8o7_46l1b4-6xj3GCGvev_s"
+    TOKEN = "8641633728:AAH7hu77EQCUSRlfx9yUT484RhuHqzeyCo4"
     ADMIN_ID = 8398522835
     PORT = int(os.getenv("PORT", 8080))
     VERSION = "900.7.0-REAL-MATRIX"
@@ -135,92 +135,105 @@ class QuantumDatabase:
 db = QuantumDatabase()
 
 # =================================================================
-# [3] REAL MAIL ENGINE (Mail.gw API - Bypass Render limits safely)
+# [3] REAL MAIL ENGINE (1secmail API - Inmune a Cloudflare y Spam)
 # =================================================================
 class MailEngine:
-    BASE_URL = "https://api.mail.gw"
-    HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-    }
-
+    BASE_URL = "https://www.1secmail.com/api/v1/"
+    
     @staticmethod
     def parse_email_html(html_content):
         if not html_content: return "Sin contenido.", [], []
         soup = BeautifulSoup(html_content, "html.parser")
         links = []
         for a in soup.find_all('a', href=True):
-            if len(links) < 8: links.append(f"🔗 [{a.text.strip() or 'Enlace'}]({a['href']})")
+            if len(links) < 8: links.append(f"🔗 [{a.text.strip() or 'Enlace'}]({a.get('href', '')})")
         images = []
         for img in soup.find_all('img', src=True):
-            if img['src'].startswith('http') and len(images) < 5: images.append(img['src'])
+            if img.get('src', '').startswith('http') and len(images) < 5: images.append(img['src'])
         text = soup.get_text(separator="\n", strip=True)
         return text, links, images
 
     @classmethod
-    async def req(cls, method, endpoint, token=None, json_data=None):
-        headers = cls.HEADERS.copy()
-        if token: headers["Authorization"] = f"Bearer {token}"
+    async def get_domains(cls):
+        # Dominios "secretos" de emergencia
+        fallbacks = [{"domain": "xojxe.com"}, {"domain": "yoggm.com"}, {"domain": "wwwnew.eu"}, {"domain": "oosln.com"}, {"domain": "ewaaj.com"}, {"domain": "zzyvc.com"}]
         try:
             async with aiohttp.ClientSession() as s:
-                async with s.request(method, f"{cls.BASE_URL}{endpoint}", headers=headers, json=json_data) as r:
-                    if r.status in [200, 201]: return await r.json()
-                    elif r.status == 204: return True
-                    else:
-                        logger.error(f"Mail.gw API Error {r.status} en {endpoint}")
-                        return None
+                async with s.get(f"{cls.BASE_URL}?action=getDomainList") as r:
+                    if r.status == 200:
+                        data = await r.json()
+                        if data:
+                            # Filtramos "1secmail" para que Gmail no bloquee los correos salientes
+                            safe_domains = [d for d in data if "1secmail" not in d]
+                            if safe_domains:
+                                return [{"domain": d} for d in safe_domains]
+                            return [{"domain": d} for d in data]
         except Exception as e:
-            logger.error(f"MailEngine Request Exception: {e}")
-            return None
-
-    @classmethod
-    async def get_domains(cls):
-        res = await cls.req("GET", "/domains")
-        return res.get("hydra:member", []) if res else []
+            logger.error(f"MailEngine Domain Request Exception: {e}")
+        return fallbacks
 
     @classmethod
     async def create_account(cls, domain, custom_username=None):
         username = custom_username if custom_username else ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
         address = f"{username}@{domain}"
-        password = ''.join(random.choices(string.ascii_letters + string.digits, k=16)) + "X!"
+        password = "No requerida (API Abierta)"
         
-        acc_data = await cls.req("POST", "/accounts", json_data={"address": address, "password": password})
-        if acc_data:
-            token_data = await cls.req("POST", "/token", json_data={"address": address, "password": password})
-            if token_data:
-                return {
-                    "address": address, "password": password, 
-                    "token": token_data["token"], "domain": domain, 
-                    "id": acc_data["id"]
-                }
-        return None
+        return {
+            "address": address, "password": password, 
+            "token": f"{username}:{domain}", "domain": domain, 
+            "id": str(uuid.uuid4())[:8]
+        }
 
     @classmethod
     async def get_messages(cls, token):
-        res = await cls.req("GET", "/messages", token=token)
-        return res.get("hydra:member", []) if res else []
+        try:
+            login, domain = token.split(":")
+            async with aiohttp.ClientSession() as s:
+                async with s.get(f"{cls.BASE_URL}?action=getMessages&login={login}&domain={domain}") as r:
+                    if r.status == 200:
+                        msgs = await r.json()
+                        return [{"id": str(m["id"]), "from": {"address": m["from"]}, "subject": m["subject"], "createdAt": m["date"]} for m in msgs]
+        except Exception as e:
+            logger.error(f"Get Messages Error: {e}")
+        return []
 
     @classmethod
     async def read_message(cls, token, msg_id):
-        return await cls.req("GET", f"/messages/{msg_id}", token=token)
+        try:
+            login, domain = token.split(":")
+            async with aiohttp.ClientSession() as s:
+                async with s.get(f"{cls.BASE_URL}?action=readMessage&login={login}&domain={domain}&id={msg_id}") as r:
+                    if r.status == 200:
+                        m = await r.json()
+                        # Adaptado para que la Matriz V900 lo lea perfectamente (incluidos adjuntos)
+                        atts = [{"id": a["filename"], "name": a["filename"], "filename": a["filename"]} for a in m.get("attachments", [])]
+                        return {
+                            "id": str(m["id"]), "from": {"address": m["from"]},
+                            "subject": m["subject"], "createdAt": m["date"],
+                            "text": m.get("textBody", ""), "html": m.get("htmlBody", ""),
+                            "hasAttachments": len(atts) > 0, "attachments": atts
+                        }
+        except Exception as e:
+            logger.error(f"Read Message Error: {e}")
+        return None
 
     @classmethod
     async def delete_account(cls, token, account_id):
-        return await cls.req("DELETE", f"/accounts/{account_id}", token=token)
+        return True
 
     @classmethod
     async def download_attachment(cls, token, msg_id, attachment_id, filename):
-        headers = cls.HEADERS.copy()
-        headers["Authorization"] = f"Bearer {token}"
         try:
+            login, domain = token.split(":")
             async with aiohttp.ClientSession() as s:
-                async with s.get(f"{cls.BASE_URL}/messages/{msg_id}/download/{attachment_id}", headers=headers) as r:
+                url = f"{cls.BASE_URL}?action=download&login={login}&domain={domain}&id={msg_id}&file={filename}"
+                async with s.get(url) as r:
                     if r.status == 200:
                         path = os.path.join(SupremeConfig.VAULT_DIR, f"att_{uuid.uuid4().hex[:8]}_{filename}")
                         with open(path, 'wb') as f: f.write(await r.read())
                         return path
-        except Exception: pass
+        except Exception as e:
+            logger.error(f"Download Attachment Error: {e}")
         return None
 
 # =================================================================
