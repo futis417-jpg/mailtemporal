@@ -54,7 +54,7 @@ from telegram.ext import (
 )
 
 class SupremeConfig:
-    TOKEN = "8641633728:AAFz8fMKKZivoZ_x_Ad6Zia_IDYrEEqy174"
+    TOKEN = "8641633728:AAEJ6dJhmIQsjLkMsuDd3gLckdYMRMrjSPI"
     ADMIN_ID = 8398522835
     PORT = int(os.getenv("PORT", 8080))
     VERSION = "900.6.0-SUPREME-STABLE"
